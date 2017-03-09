@@ -1,5 +1,5 @@
-class NotLoggedIn < StandardError
-  def initialize(msg = 'Cannot log out because you`re not logged in')
+class AssertionError < StandardError
+  def initialize(msg)
     super
   end
 end
