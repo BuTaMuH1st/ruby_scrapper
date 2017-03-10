@@ -17,7 +17,7 @@ class Scrapper
   }.freeze
 
   def initialize(host = '127.0.0.1', port = 5000, driver = :chrome)
-    raise ArgumentError unless [:firefox, :chrome].include?(driver)
+    raise ArgumentError unless [:firefox, :chrome, :phantom_js].include?(driver)
 
     @browser  = Watir::Browser.new(driver)
     @base_url = "http://#{host}:#{port}"
@@ -29,6 +29,7 @@ class Scrapper
   # returns: true if url has been changed
   # used: browser#goto, Watir::Wait#until, browser#url
   def change_endpoint(endpoint)
+    return true if browser.url == base_url + ENDPOINTS[endpoint]
     history[:prev_url] = browser.url
     browser.goto(base_url + ENDPOINTS[endpoint])
     Watir::Wait.until(timeout: 5) { history[:prev_url] != browser.url }
@@ -40,7 +41,6 @@ class Scrapper
   # used: browser#li, browser#url
   def change_page(direction)
     raise AttributeError unless [:next, :previous].include?(direction)
-
     begin
       history[:prev_page] = %r{\/(\d+)\/$}.match(browser.url)[1].to_i
     rescue NoMethodError
@@ -117,6 +117,7 @@ class Scrapper
   # element#value
   # returns true if values were set
   def set_filters(author, tag)
+    change_endpoint(:search) unless browser.url != base_url + ENDPOINTS[:search]
     dd_author = browser.select_list(id: 'author')
     dd_tag    = browser.select_list(id: 'tag')
 
@@ -127,8 +128,8 @@ class Scrapper
   end
 
   # used: browser#select_list, browser#button
-  # element#click, element#select_value
-  def parse_using_search_filter(author = 'Mark Twain', tag = 'classic')
+  # element#click, element#select_value, quote#spans
+  def parse_quotes_by_filter(author = 'Mark Twain', tag = 'classic')
     change_endpoint(:search)
     result = []
     raise AssertionError, 'Filters were not set' unless set_filters(author, tag)
@@ -139,6 +140,42 @@ class Scrapper
         tags:    quote.spans[2].text
       }
     end.compact)
+    result
+  end
+
+  # does the same thing as in :base endpoint
+  def parse_quotes_js
+    change_endpoint(:js)
+    result = []
+    loop do
+      result.concat(page_quotes.map { |quote| parse_quote(quote) }.compact)
+      break unless browser.li(class: 'next').present?
+      change_page(:next)
+    end
+    result
+  end
+
+  # used: browser#table, browser#table#trs
+  # browser#text
+  def parse_quotes_tableful
+    change_endpoint(:tableful)
+    result = []
+    table  = browser.table.trs[1...-1]
+    page = 1
+    loop do
+      table.each_with_index do |tr, i|
+        next if i.odd?
+        quote, author = table[i].text.split(' Author: ')
+        result.push({
+          text: quote,
+          author: author,
+          tags: table[i + 1].text.split[1..-1]
+        })
+      end
+      page += 1
+      browser.goto(base_url + ENDPOINTS[:tableful] + "/page/#{page}")
+      break if browser.text.include?('No quotes found')
+    end
     result
   end
 
@@ -164,20 +201,18 @@ class Scrapper
     Watir::Wait.until(timeout: 5) { browser.link(href: '/login').present? }
     browser.link(href: '/login').present?
   end
-
-  def help
-    puts "Available methods: #{(methods - self.class.methods).join(', ')}"
-  end
 end
 
 def run
   scrapper = Scrapper.new
   puts "Parsed random quote: #{!scrapper.parse_random_quote.empty?}"
   puts "Logged in: #{scrapper.login('user', 'mySupperPupper#sEcrEt')}"
-  puts "Parsed all quotes using ajax requests for scrolling: #{scrapper.parse_quotes_scroll.size == 100}"
-  puts "Logged out: #{scrapper.logout}"
   puts "Parsed all quotes using base page: #{scrapper.parse_quotes_by_page.size == 100}"
-  puts "Parsed all quotes using search filters: #{!scrapper.parse_using_search_filter.empty?}"
+  puts "Logged out: #{scrapper.logout}"
+  puts "Parsed all quotes using ajax requests for scrolling: #{scrapper.parse_quotes_scroll.size == 100}"
+  puts "Parsed all quotes using search filters: #{!scrapper.parse_quotes_by_filter.empty?}"
+  puts "Parsed all quotes using js code generator: #{scrapper.parse_quotes_js.size == 100}"
+  puts "Parsed all quotes using tableful representation: #{scrapper.parse_quotes_tableful.size == 100}"
   puts "Browser closed: #{scrapper.browser.close}"
 end
 
