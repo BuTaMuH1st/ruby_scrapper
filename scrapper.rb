@@ -1,11 +1,10 @@
 #! /usr/bin/ruby
 require 'watir'
-require 'nokogiri'
 require_relative 'exceptions'
 
 #
 class Scrapper
-  attr_reader :browser, :authors, :history, :base_url
+  attr_reader :browser, :history, :base_url
   ENDPOINTS = {
     base: '/', # well structured HTML with microdata markup and pagination buttons
     scroll: '/scroll', # same as /, but with infinite scrolling via AJAX calls.
@@ -81,8 +80,8 @@ class Scrapper
   # used: element#spans, element#element, element#text
   # element#a, element#href, element#div, #element#links
   def parse_quote(quote, save_authors = false)
-    quote_author           = quote.spans[1].element(class: 'author').text
-    authors[quote_author]  = quote.spans[1].a.href if save_authors
+    quote_author            = quote.spans[1].element(class: 'author').text
+    @authors[quote_author]  = quote.spans[1].a.href if save_authors
     {
       text:   quote.spans[0].text,
       author: quote_author,
