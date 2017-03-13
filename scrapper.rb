@@ -37,10 +37,7 @@ class Scrapper
   end
 
   def update_action_log(key, value)
-    unless value
-      logger.warn("Action failed: #{key}: #{value} in #{caller[0]}")# unless value
-      gets
-    end
+    logger.warn("Action failed: #{key}: #{value} in #{caller[0]}") unless value
     action_log[key] = value unless action_log.key?(key)
     value
   end
