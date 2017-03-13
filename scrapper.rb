@@ -42,25 +42,28 @@ class Scrapper
     value
   end
 
+  def test_base_methods
+    update_action_log(:driver, !browser.driver.nil?)
+
+    browser.goto('https://google.com')
+    update_action_log(:goto, browser.title.eql?('Google'))
+    update_action_log(:url, !(browser.url.nil? || browser.url.empty?))
+  end
+
   def check_action_log; end
 
   # returns: true if url has been changed
   # actions: goto, url
   def change_endpoint(endpoint)
     current_url = browser.url
-    update_action_log(:url, !(current_url.nil? || current_url.empty?))
-    return true if current_url == base_url + ENDPOINTS[endpoint]
-    history[:prev_url] = current_url
+    return if current_url == base_url + ENDPOINTS[endpoint]
     browser.goto(base_url + ENDPOINTS[endpoint])
-    Watir::Wait.until(timeout: 5) { current_url != browser.url }
-
-    update_action_log(:goto, current_url != browser.url)
+    Watir::Wait.until { current_url != browser.url }
   end
 
   # actions: driver, execute_script, alert_raised
   def raise_alert(text)
     browser.driver.execute_script("window.alert('#{text}')")
-    update_action_log(:driver, !browser.driver.nil?)
     sleep 1
     update_action_log('driver#execute_script(window.alert())', browser.alert.exists?)
     update_action_log(:alert_raised, browser.alert.exists? && browser.alert.text.eql?(text))
@@ -373,6 +376,7 @@ def run
   alert_text = 'the best alert text youve ever seen'
 
   scrapper = Scrapper.new('http://127.0.0.1:5000')
+  scrapper.test_base_methods
   scrapper.login('user', 'mySupperPupper#sEcrEt')
   scrapper.parse_quotes_base
   scrapper.logout
