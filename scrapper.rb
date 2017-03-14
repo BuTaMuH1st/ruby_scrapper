@@ -1,5 +1,6 @@
 #! /usr/bin/ruby
 require 'watir'
+require 'pry'
 require 'logger'
 require_relative 'exceptions'
 
@@ -9,7 +10,9 @@ require_relative 'exceptions'
 # checkbox_unfilled: true}  etc...
 #
 class Scrapper
-  attr_reader :browser, :history, :base_url, :action_log, :logger
+  ATTRIBUTES = [:browser, :history, :base_url, :action_log, :logger].freeze
+  attr_reader *ATTRIBUTES
+
   ENDPOINTS = {
     base:     '/',            # microdata markup and pagination
     scroll:   '/scroll',      # same as /,with infinite scrolling via AJAX calls
@@ -21,7 +24,8 @@ class Scrapper
     frames:   '/frames',      # frameset testing
     form:     '/form'         # checkboxes, radios, text_fields here...
   }.freeze
-
+  CREDENTIALS = ['user', 'mySupperPupper#sEcrEt'].freeze
+  ALERT_TEXT  = 'the best alert text youve ever seen'.freeze
   def initialize(url, driver = :chrome)
     raise ArgumentError unless [:firefox, :chrome, :phantom_js].include?(driver)
     @logger            = Logger.new(STDOUT)
@@ -37,23 +41,26 @@ class Scrapper
   end
 
   def update_action_log(key, value)
+    raise TypeError, 'Boolean is required for <value>' unless value.is_a?(TrueClass) || value.is_a?(FalseClass)
     logger.warn("Action failed: #{key}: #{value} in #{caller[0]}") unless value
     action_log[key] = value unless action_log.key?(key)
     value
   end
 
+  # actions: goto, url, driver
   def test_base_methods
-    update_action_log(:driver, !browser.driver.nil?)
-
     browser.goto('https://google.com')
-    update_action_log(:goto, browser.title.eql?('Google'))
-    update_action_log(:url, !(browser.url.nil? || browser.url.empty?))
+
+    update_action_log(:goto,   browser.title.eql?('Google'))
+    update_action_log(:title,  !(browser.title.nil? || browser.title.empty?))
+    update_action_log(:url,    !(browser.url.nil? || browser.url.empty?))
+    update_action_log(:driver, !browser.driver.nil?)
+    update_action_log(:html,   !browser.html.nil? && browser.html.include?('<!DOCTYPE html>'))
+    update_action_log(:body,   !browser.body.nil? && browser.body.divs.size > 1)
   end
 
-  def check_action_log; end
+  def prettify_action_log; end
 
-  # returns: true if url has been changed
-  # actions: goto, url
   def change_endpoint(endpoint)
     current_url = browser.url
     return if current_url == base_url + ENDPOINTS[endpoint]
@@ -61,20 +68,20 @@ class Scrapper
     Watir::Wait.until { current_url != browser.url }
   end
 
-  # actions: driver, execute_script, alert_raised
-  def raise_alert(text)
-    browser.driver.execute_script("window.alert('#{text}')")
+  # actions: execute_script, alert_raised
+  def alert_create
+    browser.driver.execute_script("window.alert('#{ALERT_TEXT}')")
     sleep 1
     update_action_log('driver#execute_script(window.alert())', browser.alert.exists?)
-    update_action_log(:alert_raised, browser.alert.exists? && browser.alert.text.eql?(text))
+    update_action_log(:alert_raised, browser.alert.exists? && browser.alert.text.eql?(ALERT_TEXT))
   end
 
   # actions: alert, alert_text, alert_closed
-  def handle_alert(expected_text)
+  def alert_handle
     raise AssertionError, 'Alert does not exist' unless browser.alert.exists?
     text = browser.alert.text
     update_action_log(:alert, browser.alert.exists?)
-    update_action_log(:alert_text, text == expected_text)
+    update_action_log(:alert_text, text == ALERT_TEXT)
     browser.alert.close
     update_action_log(:alert_closed, !browser.alert.exists?)
   end
@@ -132,57 +139,62 @@ class Scrapper
   end
 
   # actions: browser#li
+  # uses page_quotes, parse_quotes, change_page methods(that are useful)
+  # that's why we need to call this method, but 2 cycle passage are enough
   def parse_quotes_base
     change_endpoint(:base)
     result = []
     loop do
       result.concat(page_quotes.map { |quote| parse_quote(quote) }.compact)
-      break unless browser.li(class: 'next').present?
+      # change class: to 'next' to go though all cycle
+      break unless browser.li(class: 'previous').present? # only 2 pages
       change_page(:next)
     end
     result
   end
 
   # actions: driver.execute_script
-  def parse_quotes_scroll
+  def test_scroll
     change_endpoint(:scroll)
-    result = []
     quotes_on_page = 0
     quotes_after_scroll = 1
     while quotes_on_page != quotes_after_scroll
       quotes_on_page = page_quotes.size
-      browser.driver.execute_script('window.scrollBy(0, document.body.scrollHeight)')
+      browser.driver.execute_script(
+        'window.scrollBy(0, document.body.scrollHeight)'
+      )
       sleep 1
       quotes_after_scroll = page_quotes.size
     end
     update_action_log(
       'driver#execute_script(window.scrollBy())',
-      quotes_after_scroll != 1
+      quotes_after_scroll > 1
     )
-    result.concat(page_quotes.map { |quote| parse_quote(quote) }.compact)
   end
 
   # actions: iframe
-  def parse_quotes_iframe
+  def test_iframe
     change_endpoint(:iframe)
+    page_html = browser.html
     iframe = browser.iframe(name: 'my_awesome_frame')
     update_action_log(:iframe, !iframe.nil? && iframe.present?)
-    parse_quote(iframe.div(class: 'quote'))
+    iframe_html = iframe.html
+    update_action_log(:iframe_html, !iframe_html.nil? && page_html != iframe_html)
   end
 
   # actions: frame
-  def parse_quotes_frames
+  def test_frames
     change_endpoint(:frames)
     json_frame = browser.frame(name: 'json_frame')
     random_frame = browser.frame(name: 'random_frame')
     update_action_log(
       :frame,
       [
-        !json_frame.nil? && json_frame.present?,
-        !random_frame.nil? && random_frame.present?
+        !json_frame.nil? && json_frame.present? && !json_frame.text.empty?,
+        !random_frame.nil? && random_frame.present? &&
+         !parse_quote(random_frame.div(class: 'quote')).empty?
       ].all?
     )
-    !json_frame.text.empty? && !parse_quote(random_frame.div(class: 'quote')).empty?
   end
 
   # actions: option, button, click
@@ -252,14 +264,19 @@ class Scrapper
     checkboxes[0].clear
     update_action_log(:checkbox_clear, !checkboxes[0].set?)
 
-    drop_down_box = browser.select_list(name: 'entry.1000004')
+    drop_down_box = browser.div(id: 'entry_1000004')
+    button = drop_down_box.button
     update_action_log(
-      :select_list,
-      !drop_down_box.nil? && drop_down_box.present? && drop_down_box.respond_to?(:options)
+      :js_dropdown_button,
+      !button.nil? && button.present? && button.respond_to?(:click)
     )
-    update_action_log(:options, drop_down_box.options.size == 7)
-    drop_down_box.select_value('Chrome')
-    update_action_log(:select_value, drop_down_box.value == 'Chrome')
+    button.click
+    choice = drop_down_box.div.links.to_a.sample
+    choice.click
+    update_action_log(
+      :js_dropdown_option_select,
+      drop_down_box.button.value == choice.value
+    )
 
     table = browser.table(id: 'entry_1000005')
     update_action_log(:table, !table.nil? && table.respond_to?(:trs))
@@ -280,10 +297,24 @@ class Scrapper
       css: 'tr.ss-gridrow:nth-child(1) > td:nth-child(3) > label:nth-child(1) > div:nth-child(1) > #group_1000006_2'
     )
     radio_button1.click
-    update_action_log(:element_css, browser.radio(id: 'group_1000006_2').set?)
+    update_action_log(:element_by_css, browser.radio(id: 'group_1000006_2').set?)
     radio_button2 = browser.element(xpath: '//*[@id="group_1000007_4"]')
     radio_button2.click
-    update_action_log(:element_xpath, browser.radio(id: 'group_1000007_4').set?)
+    update_action_log(:element_by_xpath, browser.radio(id: 'group_1000007_4').set?)
+
+    # overlapping links
+    update_action_log(
+      :overlapping_links_present?,
+      browser.div(id: 'overlapping').links.map(&:present?) == [false, true, true]
+    )
+    update_action_log(
+      :overlapping_links_exists?,
+      browser.div(id: 'overlapping').links.map(&:exists?).all?
+    )
+    update_action_log(
+      :overlapping_links_visible?,
+      browser.div(id: 'overlapping').links.map(&:visible?) == [false, true, true]
+    )
 
     submit = browser.button(name: 'submit')
     update_action_log(:submit, !submit.nil? && submit.present? && submit.respond_to?(:click))
@@ -293,19 +324,6 @@ class Scrapper
     form_submitted_by_title = browser.title == 'Thanks!'
     update_action_log(:browser_text, form_submitted_by_text)
     update_action_log(:browser_title, form_submitted_by_title)
-  end
-
-  # does the same thing as in :base endpoint
-  def parse_quotes_js
-    # TODO: IMRPOVE!
-    change_endpoint(:js)
-    result = []
-    loop do
-      result.concat(page_quotes.map { |quote| parse_quote(quote) }.compact)
-      break unless browser.li(class: 'next').present?
-      change_page(:next)
-    end
-    result
   end
 
   # actions: table, trs, tr_text
@@ -331,14 +349,16 @@ class Scrapper
       end
       page += 1
       browser.goto(base_url + ENDPOINTS[:tableful] + "/page/#{page}")
-      break if browser.text.include?('No quotes found')
+      #break if browser.text.include?('No quotes found')
+      break if page == 2
     end
     result
   end
 
   # actions: text_field, set_text, input
   # submit_login, link
-  def login(username, password)
+  def login
+    username, password = CREDENTIALS
     raise AssertionError, "You're already logged in" if browser.link(href: '/logout').present?
     change_endpoint(:login)
     username_field = browser.text_field(id: 'username')
@@ -373,24 +393,14 @@ class Scrapper
 end
 
 def run
-  alert_text = 'the best alert text youve ever seen'
-
   scrapper = Scrapper.new('http://127.0.0.1:5000')
-  scrapper.test_base_methods
-  scrapper.login('user', 'mySupperPupper#sEcrEt')
-  scrapper.parse_quotes_base
-  scrapper.logout
-
-  scrapper.raise_alert(alert_text)
-  scrapper.handle_alert(alert_text)
-
-  scrapper.parse_quotes_scroll
-  scrapper.set_random_filters
-  scrapper.parse_quotes_frames
-  scrapper.parse_quotes_tableful
-  scrapper.parse_quotes_iframe
-  scrapper.test_form
-  scrapper.browser.close
+  (scrapper.methods - Object.methods - Scrapper::ATTRIBUTES).sort!.each do |mtd|
+    mtd = scrapper.method(mtd)
+    if mtd.parameters == []
+      puts "Calling #{mtd.name}"
+      mtd.call
+    end
+  end
   puts scrapper.action_log
   puts "Test passed with #{'no' if scrapper.action_log.values.all?} errors"
 end
