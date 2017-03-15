@@ -1,5 +1,1 @@
-class AssertionError < StandardError
-  def initialize(msg)
-    super
-  end
-end
+class AssertionError < StandardError; end

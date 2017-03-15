@@ -4,10 +4,20 @@ require 'pry'
 require 'logger'
 require_relative 'exceptions'
 
-# TODO: create an object that will store
-# {html_element: passed(true|false)}
-# for instance: {checkbox_set: true, checkbox_changed: true,
-# checkbox_unfilled: true}  etc...
+class String
+  def colorize(color_code)
+    "\e[#{color_code}m#{self}\e[0m"
+  end
+
+  def red
+    colorize(31)
+  end
+
+  def green
+    colorize(32)
+  end
+end
+
 #
 class Scrapper
   ATTRIBUTES = [:browser, :history, :base_url, :action_log, :logger].freeze
@@ -26,6 +36,7 @@ class Scrapper
   }.freeze
   CREDENTIALS = ['user', 'mySupperPupper#sEcrEt'].freeze
   ALERT_TEXT  = 'the best alert text youve ever seen'.freeze
+
   def initialize(url, driver = :chrome)
     raise ArgumentError unless [:firefox, :chrome, :phantom_js].include?(driver)
     @logger            = Logger.new(STDOUT)
@@ -42,12 +53,14 @@ class Scrapper
 
   def update_action_log(key, value)
     raise TypeError, 'Boolean is required for <value>' unless value.is_a?(TrueClass) || value.is_a?(FalseClass)
-    logger.warn("Action failed: #{key}: #{value} in #{caller[0]}") unless value
+    logger.warn("Action failed: #{key}: #{value} in #{caller[0]}".red) unless value
     action_log[key] = value unless action_log.key?(key)
+    printf "%-50s [%s]\n", key, value ? 'OK'.green : 'FAIL'.red
     value
   end
 
-  # actions: goto, url, driver
+  # add basic browser methods here...
+  # actions: goto, url, driver, title, html, body
   def test_base_methods
     browser.goto('https://google.com')
 
@@ -59,7 +72,12 @@ class Scrapper
     update_action_log(:body,   !browser.body.nil? && browser.body.divs.size > 1)
   end
 
-  def prettify_action_log; end
+  def prettify_action_log
+    longest_key = action_log.keys.max_by(&:length)
+    action_log.each_pair do |mtd, success|
+      printf "%-#{longest_key.length}s [%s]\n", mtd, success ? 'OK'.green : 'FAIL'.red
+    end
+  end
 
   def change_endpoint(endpoint)
     current_url = browser.url
@@ -397,12 +415,13 @@ def run
   (scrapper.methods - Object.methods - Scrapper::ATTRIBUTES).sort!.each do |mtd|
     mtd = scrapper.method(mtd)
     if mtd.parameters == []
-      puts "Calling #{mtd.name}"
       mtd.call
     end
   end
-  puts scrapper.action_log
+  #puts scrapper.prettify_action_log
   puts "Test passed with #{'no' if scrapper.action_log.values.all?} errors"
 end
 
 run
+
+# TODO: add hover!
