@@ -47,7 +47,7 @@ class Scrapper
     }
 
     @caps = Selenium::WebDriver::Remote::Capabilities.send(
-      :chrome,
+      driver,
       {
           javascript_enabled:    true,
           css_selectors_enabled: true,
