@@ -1,4 +1,5 @@
 #! /usr/bin/ruby
+require "optparse"
 require 'watir'
 require 'pry'
 require 'logger'
@@ -38,8 +39,8 @@ class Scrapper
   CREDENTIALS = ['user', 'mySupperPupper#sEcrEt'].freeze
   ALERT_TEXT  = 'the best alert text youve ever seen'.freeze
 
-  def initialize(url, driver = :chrome, remote_browser_url)
-    raise ArgumentError unless [:firefox, :chrome, :phantom_js].include?(driver)
+  def initialize(url, remote_browser_url, driver)
+    raise ArgumentError, 'Invalid driver' unless [:firefox, :chrome, :phantom_js].include?(driver.to_sym)
     @logger            = Logger.new(STDOUT)
     @logger.level      = Logger::WARN
     @logger.formatter  = proc { |severity, datetime, progname, msg|
@@ -425,10 +426,9 @@ class Scrapper
   end
 end
 
-def run
-  REMOTE_BROWSER_URL = 
+def run(options)
   started  = Time.now 
-  scrapper = Scrapper.new('<BASE_URL_HERE>', '<REMOTE_BROWSER_URL_HERE>')
+  scrapper = Scrapper.new(options[:base_url], options[:remote_browser_url], options.fetch(:driver) || :chrome)
   (scrapper.methods - Object.methods - Scrapper::ATTRIBUTES).sort!.each do |mtd|
     mtd = scrapper.method(mtd)
     if mtd.parameters == []
@@ -442,6 +442,19 @@ ensure
   puts "Elapsed time: #{Time.now - started}s"
 end
 
-run
+
+options = {}
+OptionParser.new do |opts|
+  opts.banner = "Usage: scrapper.rb [options]"
+
+  opts.on('-b', '--base_url   URL',            '*Base url')    { |v| options[:base_url] = v }
+  opts.on('-r', '--remote_url URL',            '*Remote host') { |v| options[:remote_browser_url] = v }
+  opts.on('-d', '--driver     chrome|firefox', 'Driver')       { |v| options[:driver] = v }
+  opts.on('-c', '--count      INT',            '*Driver instances amount')  
+
+end.parse!
+
+
+run(options)
 
 # TODO: add hover!

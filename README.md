@@ -1,4 +1,12 @@
 # Web scrapper for [spidyquotes](https://github.com/mtkachenk0/spidyquotes) written on Ruby
+```sh
+./runner.sh -b=<BASE_URL> -r=<REMOTE_URL> -c=<COUNT> -d=<DRIVER>
+
+Usage: scrapper.rb [options]
+    -b, --base_url   URL             *Base url
+    -r, --remote_url URL             *Remote host
+    -d, --driver     chrome|firefox  Driver
+```
 
 Output example
 ```json
