@@ -2,7 +2,6 @@
 require "optparse"
 require 'watir'
 require 'pry'
-require 'logger'
 require_relative 'exceptions'
 
 class String
@@ -41,11 +40,6 @@ class Scrapper
 
   def initialize(url, remote_browser_url, driver)
     raise ArgumentError, 'Invalid driver' unless [:firefox, :chrome, :phantom_js].include?(driver.to_sym)
-    @logger            = Logger.new(STDOUT)
-    @logger.level      = Logger::WARN
-    @logger.formatter  = proc { |severity, datetime, progname, msg|
-      Logger::Formatter.new.call(severity, datetime, progname, msg.dump)
-    }
 
     @caps = Selenium::WebDriver::Remote::Capabilities.send(
       driver,
@@ -55,7 +49,6 @@ class Scrapper
           takes_screenshot:      true
       }
     )
-  
     @browser = Watir::Browser.new(
       :remote,
       url: remote_browser_url,
@@ -69,7 +62,6 @@ class Scrapper
 
   def update_action_log(key, value)
     raise TypeError, 'Boolean is required for <value>' unless value.is_a?(TrueClass) || value.is_a?(FalseClass)
-    logger.warn("Action failed: #{key}: #{value} in #{caller[0]}".red) unless value
     action_log[key] = value unless action_log.key?(key)
     printf "%-50s [%s]\n", key, value ? 'OK'.green : 'FAIL'.red
     value

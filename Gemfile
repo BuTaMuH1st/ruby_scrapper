@@ -1,3 +1,3 @@
 source 'https://rubygems.org'
 
-gem 'watir', '==6.2.0'
+gem 'watir', '6.2.0'
