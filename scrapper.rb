@@ -34,17 +34,32 @@ class Scrapper
     frames:   '/frames',      # frameset testing
     form:     '/form'         # checkboxes, radios, text_fields here...
   }.freeze
+
   CREDENTIALS = ['user', 'mySupperPupper#sEcrEt'].freeze
   ALERT_TEXT  = 'the best alert text youve ever seen'.freeze
 
-  def initialize(url, driver = :chrome)
+  def initialize(url, driver = :chrome, remote_browser_url)
     raise ArgumentError unless [:firefox, :chrome, :phantom_js].include?(driver)
     @logger            = Logger.new(STDOUT)
     @logger.level      = Logger::WARN
     @logger.formatter  = proc { |severity, datetime, progname, msg|
       Logger::Formatter.new.call(severity, datetime, progname, msg.dump)
     }
-    @browser           = Watir::Browser.new(driver)
+
+    @caps = Selenium::WebDriver::Remote::Capabilities.send(
+      :chrome,
+      {
+          javascript_enabled:    true,
+          css_selectors_enabled: true,
+          takes_screenshot:      true
+      }
+    )
+  
+    @browser = Watir::Browser.new(
+      :remote,
+      url: remote_browser_url,
+      desired_capabilities: @caps
+    )
     @base_url          = url
     @history           = {}
     @action_log        = {}
@@ -83,26 +98,26 @@ class Scrapper
     current_url = browser.url
     return if current_url == base_url + ENDPOINTS[endpoint]
     browser.goto(base_url + ENDPOINTS[endpoint])
-    Watir::Wait.until { current_url != browser.url }
+    Watir::Wait.until(timeout: 60) { current_url != browser.url }
   end
 
   # actions: execute_script, alert_raised
-  def alert_create
-    browser.driver.execute_script("window.alert('#{ALERT_TEXT}')")
-    sleep 1
-    update_action_log('driver#execute_script(window.alert())', browser.alert.exists?)
-    update_action_log(:alert_raised, browser.alert.exists? && browser.alert.text.eql?(ALERT_TEXT))
-  end
+  # def alert_create
+  #   browser.driver.execute_script("window.alert('#{ALERT_TEXT}')")
+  #   sleep 1
+  #   update_action_log('driver#execute_script(window.alert())', browser.alert.exists?)
+  #   update_action_log(:alert_raised, browser.alert.exists? && browser.alert.text.eql?(ALERT_TEXT))
+  # end
 
-  # actions: alert, alert_text, alert_closed
-  def alert_handle
-    raise AssertionError, 'Alert does not exist' unless browser.alert.exists?
-    text = browser.alert.text
-    update_action_log(:alert, browser.alert.exists?)
-    update_action_log(:alert_text, text == ALERT_TEXT)
-    browser.alert.close
-    update_action_log(:alert_closed, !browser.alert.exists?)
-  end
+  # # actions: alert, alert_text, alert_closed
+  # def alert_handle
+  #   raise AssertionError, 'Alert does not exist' unless browser.alert.exists?
+  #   text = browser.alert.text
+  #   update_action_log(:alert, browser.alert.exists?)
+  #   update_action_log(:alert_text, text == ALERT_TEXT)
+  #   browser.alert.close
+  #   update_action_log(:alert_closed, !browser.alert.exists?)
+  # end
 
   # Click next or previous button to test pagination
   # returns true if page num in url has been changed
@@ -411,7 +426,9 @@ class Scrapper
 end
 
 def run
-  scrapper = Scrapper.new('http://127.0.0.1:5000')
+  REMOTE_BROWSER_URL = 
+  started  = Time.now 
+  scrapper = Scrapper.new('<BASE_URL_HERE>', '<REMOTE_BROWSER_URL_HERE>')
   (scrapper.methods - Object.methods - Scrapper::ATTRIBUTES).sort!.each do |mtd|
     mtd = scrapper.method(mtd)
     if mtd.parameters == []
@@ -420,6 +437,9 @@ def run
   end
   #puts scrapper.prettify_action_log
   puts "Test passed with #{'no' if scrapper.action_log.values.all?} errors"
+ensure
+  scrapper.browser.close if scrapper
+  puts "Elapsed time: #{Time.now - started}s"
 end
 
 run
